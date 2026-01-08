@@ -1,0 +1,5 @@
+{
+  "name": "FlowCash Smart",
+  "description": "A smart financial management app designed for split-salary earners (Vale/Advance). Features cash flow intelligence, expense tracking, and goal planning.",
+  "requestFramePermissions": []
+}
