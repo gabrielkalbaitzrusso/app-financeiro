@@ -2,16 +2,20 @@ import React, { useState, useEffect } from 'react';
 import SetupWizard from './components/SetupWizard';
 import Dashboard from './components/Dashboard';
 import ExpenseList from './components/ExpenseList';
+import Debts from './components/Debts';
 import Goals from './components/Goals';
-import { UserConfig, Expense, Goal } from './types';
+import { UserConfig, Expense, Goal, Debt } from './types';
 import * as finance from './services/finance';
-import { LayoutDashboard, Receipt, Target, Settings, LogOut, CircleDollarSign, Moon, Sun } from 'lucide-react';
+import { LayoutDashboard, Receipt, Target, Settings, LogOut, CircleDollarSign, Moon, Sun, TrendingDown } from 'lucide-react';
+import { LocalNotifications } from '@capacitor/local-notifications';
+import { IonPage, IonContent, IonHeader, IonFooter } from '@ionic/react';
 
 const App: React.FC = () => {
   const [config, setConfig] = useState<UserConfig | null>(null);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'expenses' | 'goals'>('dashboard');
+  const [debts, setDebts] = useState<Debt[]>([]);
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'expenses' | 'goals' | 'debts'>('dashboard');
   const [loading, setLoading] = useState(true);
   const [isEditingConfig, setIsEditingConfig] = useState(false);
   
@@ -32,10 +36,26 @@ const App: React.FC = () => {
   }, [darkMode]);
 
   useEffect(() => {
+    // Notification Permissions
+    const checkPermissions = async () => {
+        try {
+            const status = await LocalNotifications.checkPermissions();
+            if (status.display !== 'granted') {
+                await LocalNotifications.requestPermissions();
+            }
+        } catch (e) {
+            console.error("Notification permission error", e);
+        }
+    };
+    checkPermissions();
+  }, []);
+
+  useEffect(() => {
     // Load data from local storage on mount
     const loadedConfig = finance.getStoredConfig();
     const loadedExpenses = finance.getStoredExpenses();
     const loadedGoals = finance.getStoredGoals();
+    const loadedDebts = finance.getStoredDebts();
 
     if (loadedConfig && loadedExpenses.length > 0) {
         const { didRollover, newExpenses } = finance.checkAndHandleMonthRollover(loadedExpenses, loadedConfig);
@@ -54,6 +74,7 @@ const App: React.FC = () => {
 
     setConfig(loadedConfig);
     setGoals(loadedGoals);
+    setDebts(loadedDebts);
     setLoading(false);
   }, []);
 
@@ -67,6 +88,7 @@ const App: React.FC = () => {
       localStorage.clear();
       setExpenses([]);
       setGoals([]);
+      setDebts([]);
       setConfig(null);
       // Keep theme preference? Maybe no need to clear theme
     }
@@ -103,6 +125,9 @@ const App: React.FC = () => {
     setGoals(updated);
     finance.saveGoals(updated);
   };
+  
+  // Balance calculation for Debt Plan (Available is Projected Remaining)
+  const availableBalance = config ? finance.calculateBudgetHealth(config, expenses, 'PROJECTED').remaining : 0;
 
   if (loading) return <div className="h-screen flex items-center justify-center bg-gray-50 dark:bg-[#1a1b1e] text-primary">Carregando...</div>;
 
@@ -111,10 +136,11 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className={`h-full w-full bg-[#f4f5f8] dark:bg-[#1a1b1e] relative overflow-hidden font-sans text-slate-800 dark:text-gray-100 transition-colors`}>
+    <IonPage className={`bg-[#f4f5f8] dark:bg-[#1a1b1e] font-sans text-slate-800 dark:text-gray-100 transition-colors`}>
       
       {/* Top Bar */}
-      <div className="bg-white dark:bg-[#222428] px-6 pt-12 pb-4 shadow-sm flex justify-between items-center sticky top-0 z-10 transition-colors">
+      <IonHeader className="ion-no-border">
+      <div className="bg-white dark:bg-[#222428] px-6 pt-12 pb-4 shadow-sm flex justify-between items-center transition-colors">
         <div className="flex items-center gap-2">
             <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center text-white font-bold text-lg shadow-lg shadow-blue-500/30">
                 <CircleDollarSign size={20} />
@@ -133,9 +159,11 @@ const App: React.FC = () => {
             </button>
         </div>
       </div>
+      </IonHeader>
 
       {/* Main Content Area */}
-      <main className="p-6 h-[calc(100%-160px)] overflow-y-auto no-scrollbar">
+      <IonContent fullscreen>
+      <main className="p-6 pb-24 h-full bg-[#f4f5f8] dark:bg-[#1a1b1e]">
         {activeTab === 'dashboard' && <Dashboard config={config} expenses={expenses} goals={goals} />}
         {activeTab === 'expenses' && (
           <ExpenseList 
@@ -151,6 +179,14 @@ const App: React.FC = () => {
             }}
           />
         )}
+        {activeTab === 'debts' && (
+            <Debts 
+                debts={debts}
+                config={config}
+                availableBalance={availableBalance} // Pass available balance for analysis
+                onUpdate={setDebts}
+            />
+        )}
         {activeTab === 'goals' && (
           <Goals 
             goals={goals} 
@@ -161,9 +197,11 @@ const App: React.FC = () => {
           />
         )}
       </main>
+      </IonContent>
 
       {/* Bottom Navigation */}
-      <nav className="absolute bottom-0 w-full bg-white dark:bg-[#222428] border-t border-gray-200 dark:border-gray-800 px-6 py-4 flex justify-between items-center z-20 pb-8 transition-colors">
+      <IonFooter className="ion-no-border">
+      <nav className="w-full bg-white dark:bg-[#222428] border-t border-gray-200 dark:border-gray-800 px-6 py-4 flex justify-between items-center pb-8 transition-colors">
         <button 
           onClick={() => setActiveTab('dashboard')}
           className={`flex flex-col items-center gap-1 transition-colors ${activeTab === 'dashboard' ? 'text-primary' : 'text-gray-400 dark:text-gray-500'}`}
@@ -179,6 +217,14 @@ const App: React.FC = () => {
           <Receipt size={24} />
           <span className="text-[10px] font-medium">Gastos</span>
         </button>
+        
+        <button 
+          onClick={() => setActiveTab('debts')}
+          className={`flex flex-col items-center gap-1 transition-colors ${activeTab === 'debts' ? 'text-primary' : 'text-gray-400 dark:text-gray-500'}`}
+        >
+          <TrendingDown size={24} />
+          <span className="text-[10px] font-medium">Dívidas</span>
+        </button>
 
         <button 
           onClick={() => setActiveTab('goals')}
@@ -188,7 +234,8 @@ const App: React.FC = () => {
           <span className="text-[10px] font-medium">Metas</span>
         </button>
       </nav>
-    </div>
+      </IonFooter>
+    </IonPage>
   );
 };
 

@@ -27,6 +27,10 @@ export interface Expense {
   isPaid: boolean;
   category?: string;
   manualSource?: 'VALE' | 'SALARY';
+  type?: 'FIXED' | 'VARIABLE';
+  createdAt?: string; // ISO Date for Variable expenses
+  exclusions?: string[]; // List of YYYY-MM where this recurring expense is excluded
+  endDate?: string; // YYYY-MM Last valid month for this expense
 }
 
 export interface Goal {
@@ -65,4 +69,14 @@ export interface MonthHistory {
     remaining: number;
     expensesSnapshot: Expense[]; // Snapshot of expenses as they were paying (including isPaid status)
     extraIncomesSnapshot: ExtraIncome[];
+}
+
+export interface Debt {
+    id: string;
+    description: string;
+    totalAmount: number;
+    remainingAmount: number;
+    interestRate: number; // Monthly %
+    dueDate: number; // Day of month
+    minPayment?: number;
 }

@@ -38,20 +38,55 @@ const Dashboard: React.FC<Props> = ({ config, expenses, goals }) => {
   // View State
   const [viewMode, setViewMode] = useState<'PROJECTED' | 'REALIZED'>('PROJECTED');
 
-  useEffect(() => {
-    setMonthlyData(getMonthlyData(selectedMonth));
-  }, [selectedMonth]);
+  // Dashboard Logic: Determine which expenses to show (Active vs History)
+  const currentMonthKey = new Date().toISOString().slice(0, 7); // YYYY-MM
+  
+  const [displayedExpenses, setDisplayedExpenses] = useState<Expense[]>(expenses);
 
-  const baseHealth = calculateMonthlyBudgetHealth(config, expenses, monthlyData, 'PROJECTED');
+  useEffect(() => {
+    // 1. Load Monthly Data (Extra Income)
+    setMonthlyData(getMonthlyData(selectedMonth));
+
+    // 2. Load Expenses
+    // Check if selected month is the *active* month tracked in App state
+    const lastActiveMonth = localStorage.getItem('flowcash_last_active_month') || currentMonthKey;
+    
+    if (selectedMonth === lastActiveMonth) {
+        // If viewing the current active month, use the live data from props
+        setDisplayedExpenses(expenses);
+    } else {
+        // If viewing a past month, try to load from history
+        const historyKey = `flowcash_history_${selectedMonth}`;
+        const historyData = localStorage.getItem(historyKey);
+        
+        if (historyData) {
+            const parsed = JSON.parse(historyData);
+            setDisplayedExpenses(parsed.expensesSnapshot || []);
+        } else {
+            // Future Month Projection: Show current Fixed Expenses
+            if (selectedMonth > lastActiveMonth) {
+                 const projected = expenses.filter(e => e.type !== 'VARIABLE').map(e => ({
+                     ...e,
+                     isPaid: false
+                 }));
+                 setDisplayedExpenses(projected);
+            } else {
+                 setDisplayedExpenses([]);
+            }
+        }
+    }
+  }, [selectedMonth, expenses]); // Update when month changes OR when live expenses change
+
+  const baseHealth = calculateMonthlyBudgetHealth(config, displayedExpenses, monthlyData, 'PROJECTED');
   
   // Realized Logic
-  const paidExpenses = expenses.filter(e => e.isPaid);
+  const paidExpenses = displayedExpenses.filter(e => e.isPaid);
   const realizedHealth = calculateMonthlyBudgetHealth(config, paidExpenses, monthlyData, 'REALIZED');
   
   const health = viewMode === 'PROJECTED' ? baseHealth : realizedHealth;
 
   const sources = calculateIncomeParts(config);
-  const suggestions = analyzeFinances(config, expenses, goals);
+  const suggestions = analyzeFinances(config, displayedExpenses, goals);
 
   const handleMonthChange = (direction: 'prev' | 'next') => {
     const [year, month] = selectedMonth.split('-').map(Number);

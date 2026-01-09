@@ -370,11 +370,13 @@ export const checkAndHandleMonthRollover = (currentExpenses: Expense[], config: 
   }
   
   // 3. Reset for New Month
-  // Keep fixed expenses, but uncheck them
-  const newExpenses = currentExpenses.map(e => ({
+  // Keep fixed expenses (reset paid status), BUT REMOVE variable expenses (they stay in history only)
+  const newExpenses = currentExpenses
+    .filter(e => e.type !== 'VARIABLE')
+    .map(e => ({
       ...e,
       isPaid: false, // Reset paid status
-      manualSource: undefined // Reset manual source overrides? Probably yes, or keep? User said "zero everything... keep fixed expenses". Usually manual source might vary. Let's reset for safety.
+      manualSource: undefined // Reset manual source overrides
   }));
   
   // 4. Update pointer
@@ -424,3 +426,74 @@ export const parseTransactionText = (text: string): { amount?: number; descripti
 
   return null;
 };
+
+
+// --- Debt Logic ---
+
+export const getStoredDebts = (): Debt[] => {
+  const data = localStorage.getItem('flowcash_debts');
+  return data ? JSON.parse(data) : [];
+};
+
+export const saveDebts = (debts: Debt[]): void => {
+  localStorage.setItem('flowcash_debts', JSON.stringify(debts));
+};
+
+export const analyzeDebtPlan = (availableBalance: number, debts: Debt[]): string[] => {
+    const plan: string[] = [];
+    const totalDebt = debts.reduce((acc, d) => acc + d.remainingAmount, 0);
+
+    if (debts.length === 0) return ["✅ Você não possui dívidas cadastradas."];
+    if (totalDebt <= 0) return ["🎉 Parabéns! Todas as suas dívidas estão quitadas."];
+
+    plan.push(`📉 **Total em Dívidas**: R$ ${totalDebt.toFixed(2)}`);
+    
+    // Sort by Highest Interest Rate (Avalanche Method)
+    // If interest is same, sort by lowest balance (Snowball secondary)
+    const sortedDebts = [...debts].sort((a, b) => {
+        if (b.interestRate !== a.interestRate) return b.interestRate - a.interestRate;
+        return a.remainingAmount - b.remainingAmount;
+    });
+
+    if (availableBalance <= 0) {
+        plan.push("🚨 **Alerta**: Você não possui saldo disponível este mês para abater dívidas além do mínimo.");
+        plan.push("💡 **Dica**: Tente renegociar as taxas de juros ou vender algo para gerar caixa.");
+        return plan;
+    }
+
+    plan.push(`💰 **Saldo Disponível para Quitação**: R$ ${availableBalance.toFixed(2)}`);
+    plan.push("📋 **Plano de Ação Sugerido**:");
+
+    let currentBalance = availableBalance;
+    
+    sortedDebts.forEach((debt, index) => {
+        if (currentBalance <= 0) return;
+        if (debt.remainingAmount <= 0) return;
+
+        const payment = Math.min(currentBalance, debt.remainingAmount);
+        currentBalance -= payment;
+
+        const balanceAfterPayment = currentBalance;
+        
+        let stepText = `${index + 1}. Destine **R$ ${payment.toFixed(2)}** para **${debt.description}**`;
+        
+        if (payment >= debt.remainingAmount) {
+             stepText += ` (Quitar Dívida).`;
+        } else {
+             const newRemaining = debt.remainingAmount - payment;
+             stepText += ` (Abater). Restará da Dívida: R$ ${newRemaining.toFixed(2)}.`;
+        }
+        
+        stepText += `<br/><span class="text-xs text-gray-500 italic">Saldo livre após este pagamento: R$ ${balanceAfterPayment.toFixed(2)}</span>`;
+        
+        plan.push(stepText);
+    });
+
+    if (currentBalance > 0) {
+        plan.push(`✨ **Sobra Final**: Ainda restarão R$ ${currentBalance.toFixed(2)} livres após seguir o plano.`);
+    }
+
+    return plan;
+};
+
+import { Debt } from '../types';
